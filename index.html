@@ -174,16 +174,12 @@
           <section class="panel">
             <div class="panel-header">
               <h2>Twin Entry Helper</h2>
-              <p>Create one banking row plus multiple budget rows together.</p>
+              <p>Create multiple banking rows and multiple budget rows together under one transaction ID.</p>
             </div>
             <form id="twin-form" class="entry-form">
               <label>
                 Cleared date
                 <input name="clearedDate" type="date" />
-              </label>
-              <label>
-                Account
-                <input name="accountName" list="accounts-list" />
               </label>
               <label>
                 Check #
@@ -193,13 +189,41 @@
                 Purchase date
                 <input name="purchaseDate" type="date" />
               </label>
-              <div class="form-action-cluster">
-                <span class="twin-total-label">Split total</span>
-                <strong id="twin-total">$0.00</strong>
+              <div class="form-action-cluster form-action-cluster-wide">
+                <span class="twin-total-label">Bank total</span>
+                <strong id="twin-bank-total">$0.00</strong>
               </div>
-              <button id="add-twin-line" class="button button-secondary" type="button">Add Split</button>
+              <div class="form-action-cluster">
+                <span class="twin-total-label">Budget total</span>
+                <strong id="twin-budget-total">$0.00</strong>
+              </div>
+              <div class="form-action-cluster">
+                <span class="twin-total-label">Difference</span>
+                <strong id="twin-difference">$0.00</strong>
+              </div>
             </form>
-            <div id="twin-lines" class="twin-lines"></div>
+            <div class="panel-grid panel-grid-2">
+              <section class="subpanel">
+                <div class="panel-header panel-header-inline">
+                  <div>
+                    <h3>Bank Splits</h3>
+                    <p>Create one or more register rows.</p>
+                  </div>
+                  <button id="add-twin-bank-line" class="button button-secondary" type="button">Add Bank Split</button>
+                </div>
+                <div id="twin-bank-lines" class="twin-lines"></div>
+              </section>
+              <section class="subpanel">
+                <div class="panel-header panel-header-inline">
+                  <div>
+                    <h3>Budget Splits</h3>
+                    <p>Create one or more budget rows.</p>
+                  </div>
+                  <button id="add-twin-budget-line" class="button button-secondary" type="button">Add Budget Split</button>
+                </div>
+                <div id="twin-budget-lines" class="twin-lines"></div>
+              </section>
+            </div>
             <div class="toolbar-row">
               <button class="button button-primary" form="twin-form" type="submit">Post Twin Entry</button>
             </div>
@@ -538,6 +562,7 @@
     <datalist id="categories-list"></datalist>
     <datalist id="subcategories-list"></datalist>
     <datalist id="budget-notes-list"></datalist>
+    <div id="merge-dialog-root"></div>
 
     <script src="./data/workbook-seed.js"></script>
     <script src="./webapp.js"></script>

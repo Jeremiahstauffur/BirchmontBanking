@@ -5,7 +5,8 @@
   const PAYPERIOD_EXCLUDED_CATEGORIES = new Set(["Added", "Budget Loans", "Withdrawals"]);
   const DEFAULT_CATEGORY_NAME = "General";
   const NO_SUBCATEGORY_LABEL = "No subcategory";
-  const emptyTwinLine = () => ({ budget: "", category: "", subcategory: "", amount: "", personalNotes: "" });
+  const emptyTwinBankLine = () => ({ accountName: "", amount: "" });
+  const emptyTwinBudgetLine = () => ({ budget: "", category: "", subcategory: "", amount: "", personalNotes: "" });
 
   if (!seed) {
     document.body.innerHTML = "<p style='padding:24px;font-family:sans-serif'>Starting data could not be loaded.</p>";
@@ -15,7 +16,8 @@
   const today = todayIso();
   const state = loadState();
   normalizeState();
-  state.twinLines = [emptyTwinLine(), emptyTwinLine(), emptyTwinLine()];
+  state.twinBankLines = [emptyTwinBankLine()];
+  state.twinBudgetLines = [emptyTwinBudgetLine(), emptyTwinBudgetLine(), emptyTwinBudgetLine()];
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -33,6 +35,8 @@
       pendingReconcileIds: [],
       budgetProgressMainGroup: "",
       budgetProgressCategory: "",
+      setupCollapsedBudgets: [],
+      mergeDialog: null,
       editing: {
         register: "",
         budgetEntries: "",
@@ -69,6 +73,8 @@
         pendingReconcileIds: saved.pendingReconcileIds || defaults.pendingReconcileIds,
         budgetProgressMainGroup: saved.budgetProgressMainGroup || defaults.budgetProgressMainGroup,
         budgetProgressCategory: saved.budgetProgressCategory || defaults.budgetProgressCategory,
+        setupCollapsedBudgets: saved.setupCollapsedBudgets || defaults.setupCollapsedBudgets,
+        mergeDialog: null,
         filters: { ...defaults.filters, ...(saved.filters || {}) },
         settings: { ...defaults.settings, ...(saved.settings || {}) },
         budgetHierarchy: saved.budgetHierarchy || defaults.budgetHierarchy,
@@ -112,6 +118,8 @@
       register: null,
       budgetEntries: null,
     };
+    state.setupCollapsedBudgets = Array.isArray(state.setupCollapsedBudgets) ? state.setupCollapsedBudgets : [];
+    state.mergeDialog = null;
     state.budgetHierarchy = normalizeBudgetHierarchy(state.budgetHierarchy);
     ensureBudgetHierarchyCoverage();
     normalizeHierarchySelectionState();
@@ -127,6 +135,7 @@
         pendingReconcileIds: state.pendingReconcileIds,
         budgetProgressMainGroup: state.budgetProgressMainGroup,
         budgetProgressCategory: state.budgetProgressCategory,
+        setupCollapsedBudgets: state.setupCollapsedBudgets,
         filters: state.filters,
         settings: state.settings,
         budgetHierarchy: state.budgetHierarchy,
@@ -142,8 +151,10 @@
     renderNav();
     renderDashboard();
     renderBanking();
+    renderTwinEntry();
     renderBudgeting();
     renderSetup();
+    renderMergeDialog();
     renderTransactionLookup();
     renderPlanning();
     renderPayperiod();
@@ -335,7 +346,9 @@
       filtered.slice(0, 300),
       filtered.length > 300 ? `Showing 300 of ${filtered.length.toLocaleString()} matching rows.` : `${filtered.length.toLocaleString()} matching rows.`,
     );
+  }
 
+  function renderTwinEntry() {
     renderTwinLines();
   }
 
@@ -490,6 +503,7 @@
       (total, budget) => total + budget.categories.reduce((innerTotal, category) => innerTotal + category.subcategories.length, 0),
       0,
     );
+    const balances = getSetupBalances();
 
     byId("setup-summary").innerHTML = `
       <div class="summary-chip">
@@ -510,16 +524,24 @@
       ? budgets
           .map(
             (budget) => `
-            <section class="setup-budget-card" data-drop-target="budget" data-budget-name="${escapeAttr(budget.name)}">
+            <section class="setup-budget-card ${state.setupCollapsedBudgets.includes(budget.name) ? "is-collapsed" : ""}" data-drop-target="budget" data-budget-name="${escapeAttr(budget.name)}">
               <div class="setup-budget-head">
-                <div>
-                  <span class="setup-kicker">Budget</span>
-                  <h3>${escapeHtml(budget.name)}</h3>
+                <button class="setup-accordion-toggle" type="button" data-toggle-budget="${escapeAttr(budget.name)}" aria-expanded="${state.setupCollapsedBudgets.includes(budget.name) ? "false" : "true"}">
+                  <span>
+                    <span class="setup-kicker">Budget</span>
+                    <h3>${escapeHtml(budget.name)}</h3>
+                    <span class="setup-balance ${classForMoney(balances.budgets.get(budget.name) || 0)}">${formatMoney(balances.budgets.get(budget.name) || 0)}</span>
+                  </span>
+                  <span class="setup-chevron">${state.setupCollapsedBudgets.includes(budget.name) ? "Show" : "Hide"}</span>
+                </button>
+                <div class="setup-head-actions">
+                  <span class="pill">${budget.categories.length} categories</span>
+                  <button class="button button-secondary" type="button" data-merge-budget="${escapeAttr(budget.name)}">Merge</button>
                 </div>
-                <span class="pill">${budget.categories.length} categories</span>
               </div>
-              <div class="setup-drop-note">Drop a category anywhere on this card to move it here.</div>
-              <div class="setup-category-stack">
+              <div class="setup-budget-body">
+                <div class="setup-drop-note">Drop a category anywhere on this card to move it here.</div>
+                <div class="setup-category-stack">
                 ${budget.categories
                   .map(
                     (category) => `
@@ -535,8 +557,12 @@
                         <div>
                           <span class="setup-kicker">Category</span>
                           <strong>${escapeHtml(category.name)}</strong>
+                          <span class="setup-balance ${classForMoney(balances.categories.get(`${budget.name}::${category.name}`) || 0)}">${formatMoney(balances.categories.get(`${budget.name}::${category.name}`) || 0)}</span>
                         </div>
-                        <span class="pill">${category.subcategories.length} subcategories</span>
+                        <div class="setup-head-actions">
+                          <span class="pill">${category.subcategories.length} subcategories</span>
+                          <button class="button button-secondary" type="button" data-merge-category="${escapeAttr(budget.name)}" data-category-name="${escapeAttr(category.name)}">Merge</button>
+                        </div>
                       </div>
                       <div class="setup-drop-note">Drop a subcategory anywhere in this card to move it here.</div>
                       <div class="setup-subcategory-wrap">
@@ -545,15 +571,18 @@
                             ? category.subcategories
                                 .map(
                                   (subcategory) => `
-                                  <button
+                                  <div
                                     class="setup-subcategory-chip"
-                                    type="button"
                                     draggable="true"
                                     data-drag-type="subcategory"
                                     data-budget-name="${escapeAttr(budget.name)}"
                                     data-category-name="${escapeAttr(category.name)}"
                                     data-subcategory-name="${escapeAttr(subcategory)}"
-                                  >${escapeHtml(subcategory)}</button>`,
+                                  >
+                                    <span>${escapeHtml(subcategory)}</span>
+                                    <span class="setup-chip-balance ${classForMoney(balances.subcategories.get(`${budget.name}::${category.name}::${subcategory}`) || 0)}">${formatMoney(balances.subcategories.get(`${budget.name}::${category.name}::${subcategory}`) || 0)}</span>
+                                    <button class="setup-subcategory-merge-dot" type="button" title="Merge subcategory" data-merge-subcategory="${escapeAttr(budget.name)}" data-category-name="${escapeAttr(category.name)}" data-subcategory-name="${escapeAttr(subcategory)}"></button>
+                                  </div>`,
                                 )
                                 .join("")
                             : `<span class="empty-state compact">No subcategories yet.</span>`
@@ -569,14 +598,15 @@
                     </article>`,
                   )
                   .join("")}
+                </div>
+                <form class="setup-inline-form" data-setup-add="category" data-budget-name="${escapeAttr(budget.name)}">
+                  <label>
+                    New category
+                    <input name="name" placeholder="Add a category" required />
+                  </label>
+                  <button class="button button-secondary" type="submit">Add Category</button>
+                </form>
               </div>
-              <form class="setup-inline-form" data-setup-add="category" data-budget-name="${escapeAttr(budget.name)}">
-                <label>
-                  New category
-                  <input name="name" placeholder="Add a category" required />
-                </label>
-                <button class="button button-secondary" type="submit">Add Category</button>
-              </form>
             </section>`,
           )
           .join("")
@@ -598,6 +628,41 @@
     renderEditableBiweeklyExpenses(planningRows);
     renderEditableCarCosts(getCarCostRows());
     renderBudgetProgress();
+  }
+
+  function renderMergeDialog() {
+    const root = byId("merge-dialog-root");
+    if (!root) return;
+    const dialog = state.mergeDialog;
+    if (!dialog || !dialog.options?.length) {
+      root.innerHTML = "";
+      return;
+    }
+    root.innerHTML = `
+      <div class="modal-shell" data-close-merge-dialog>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="merge-dialog-title">
+          <div class="panel-header">
+            <h2 id="merge-dialog-title">${escapeHtml(dialog.title)}</h2>
+            <p>${escapeHtml(dialog.description)}</p>
+          </div>
+          <form id="merge-dialog-form" class="entry-form">
+            <label class="field-wide">
+              Merge Into
+              <select id="merge-dialog-select" name="target">
+                ${dialog.options
+                  .map(
+                    (option) =>
+                      `<option value="${escapeAttr(option)}" ${option === dialog.target ? "selected" : ""}>${escapeHtml(option)}</option>`,
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <button class="button button-primary" type="submit">Merge</button>
+            <button class="button button-secondary" type="button" data-cancel-merge-dialog>Cancel</button>
+          </form>
+        </div>
+      </div>
+    `;
   }
 
   function renderPayperiod() {
@@ -948,6 +1013,24 @@
     );
   }
 
+  function getSetupBalances() {
+    const balances = {
+      budgets: new Map(),
+      categories: new Map(),
+      subcategories: new Map(),
+    };
+    for (const row of state.tables.budgetEntries) {
+      const amount = safeMoney(row.amount);
+      const budgetKey = row.budget || "Unbudgeted";
+      const categoryKey = `${budgetKey}::${row.category || DEFAULT_CATEGORY_NAME}`;
+      const subcategoryKey = `${categoryKey}::${row.subcategory || ""}`;
+      balances.budgets.set(budgetKey, round2((balances.budgets.get(budgetKey) || 0) + amount));
+      balances.categories.set(categoryKey, round2((balances.categories.get(categoryKey) || 0) + amount));
+      balances.subcategories.set(subcategoryKey, round2((balances.subcategories.get(subcategoryKey) || 0) + amount));
+    }
+    return balances;
+  }
+
   function buildBankOverview(registerRows) {
     const step = Math.max(1, safeNumber(state.settings.bankOverviewStepDays) || 1);
     const startDate = state.settings.bankOverviewStart || addDays(todayIso(), -30 * step);
@@ -1113,7 +1196,8 @@
       persist();
     });
     byId("planning-post-date").addEventListener("change", renderPlanning);
-    byId("add-twin-line").addEventListener("click", () => { state.twinLines.push(emptyTwinLine()); renderTwinLines(); });
+    byId("add-twin-bank-line").addEventListener("click", () => { state.twinBankLines.push(emptyTwinBankLine()); renderTwinLines(); persist(); });
+    byId("add-twin-budget-line").addEventListener("click", () => { state.twinBudgetLines.push(emptyTwinBudgetLine()); renderTwinLines(); persist(); });
     byId("add-biweekly-row").addEventListener("click", () => {
       state.tables.biWeeklyExpenses.push({ id: makeId("biweekly"), budget: "", category: "", subcategory: "", amountPerYear: 0 });
       renderPlanning();
@@ -1124,9 +1208,12 @@
       renderPlanning();
       persist();
     });
-    byId("twin-lines").addEventListener("input", handleTwinLineInput);
-    byId("twin-lines").addEventListener("change", handleTwinLineInput);
-    byId("twin-lines").addEventListener("click", handleTwinLineClick);
+    byId("twin-bank-lines").addEventListener("input", handleTwinLineInput);
+    byId("twin-bank-lines").addEventListener("change", handleTwinLineInput);
+    byId("twin-bank-lines").addEventListener("click", handleTwinLineClick);
+    byId("twin-budget-lines").addEventListener("input", handleTwinLineInput);
+    byId("twin-budget-lines").addEventListener("change", handleTwinLineInput);
+    byId("twin-budget-lines").addEventListener("click", handleTwinLineClick);
     byId("planning-table").addEventListener("input", handlePlanningTableInput);
     byId("planning-table").addEventListener("change", handlePlanningTableInput);
     byId("planning-table").addEventListener("click", handlePlanningTableClick);
@@ -1142,6 +1229,8 @@
     byId("setup-board").addEventListener("dragover", handleSetupDragOver);
     byId("setup-board").addEventListener("dragleave", handleSetupDragLeave);
     byId("setup-board").addEventListener("drop", handleSetupDrop);
+    byId("merge-dialog-root").addEventListener("change", handleMergeDialogChange);
+    byId("merge-dialog-root").addEventListener("submit", handleMergeDialogSubmit);
     document.body.addEventListener("focusin", handleMoneyInputFocus);
     document.body.addEventListener("focusout", handleMoneyInputBlur);
     document.body.addEventListener("click", handleGlobalClick);
@@ -1157,7 +1246,6 @@
     byId("mileage-form").elements.date.value = todayIso();
     const twinForm = byId("twin-form");
     twinForm.elements.clearedDate.value = seed.defaults.twinEntry.clearedDate || todayIso();
-    twinForm.elements.accountName.value = seed.defaults.twinEntry.accountName || "";
     twinForm.elements.checkNumber.value = seed.defaults.twinEntry.checkNumber || "";
     twinForm.elements.purchaseDate.value = seed.defaults.twinEntry.purchaseDate || todayIso();
     syncBudgetEntryFormSelection();
@@ -1349,7 +1437,13 @@
   function handleTwinSubmit(event) {
     event.preventDefault();
     const form = event.currentTarget;
-    const splits = state.twinLines
+    const bankSplits = state.twinBankLines
+      .map((line) => ({
+        accountName: line.accountName.trim(),
+        amount: safeMoney(line.amount),
+      }))
+      .filter((line) => line.accountName && safeMoney(line.amount) !== 0);
+    const budgetSplits = state.twinBudgetLines
       .map((line) => ({
         budget: line.budget.trim(),
         category: line.category.trim(),
@@ -1358,24 +1452,37 @@
         personalNotes: line.personalNotes.trim(),
       }))
       .filter((line) => line.budget && line.category && safeMoney(line.amount) !== 0);
-    if (!splits.length) return;
+    if (!bankSplits.length || !budgetSplits.length) {
+      window.alert("Twin Entry needs at least one bank split and one budget split.");
+      return;
+    }
 
     const transactionId = generateTransactionId();
-    const totalAmount = round2(splits.reduce((total, line) => total + safeMoney(line.amount), 0));
-    state.tables.register.unshift({
-      id: makeId("register"),
-      transactionId,
-      sourceRow: nextSourceRow(state.tables.register),
-      balance: null,
-      clearedDate: form.elements.clearedDate.value,
-      accountName: form.elements.accountName.value.trim(),
-      checkNumber: form.elements.checkNumber.value.trim(),
-      amount: totalAmount,
-      purchaseDate: form.elements.purchaseDate.value,
-    });
+    const bankTotal = round2(bankSplits.reduce((total, line) => total + safeMoney(line.amount), 0));
+    const budgetTotal = round2(budgetSplits.reduce((total, line) => total + safeMoney(line.amount), 0));
+    if (round2(bankTotal - budgetTotal) !== 0) {
+      window.alert(`Bank splits and budget splits need to match before posting. Current difference: ${formatMoney(round2(bankTotal - budgetTotal))}`);
+      return;
+    }
+
+    let nextRegisterRow = nextSourceRow(state.tables.register) - 1;
+    for (const split of bankSplits) {
+      nextRegisterRow += 1;
+      state.tables.register.unshift({
+        id: makeId("register"),
+        transactionId,
+        sourceRow: nextRegisterRow,
+        balance: null,
+        clearedDate: form.elements.clearedDate.value,
+        accountName: split.accountName,
+        checkNumber: form.elements.checkNumber.value.trim(),
+        amount: split.amount,
+        purchaseDate: form.elements.purchaseDate.value,
+      });
+    }
 
     let nextAddress = Math.max(0, ...state.tables.budgetEntries.map((row) => safeNumber(row.address)));
-    for (const split of splits) {
+    for (const split of budgetSplits) {
       nextAddress += 1;
       state.tables.budgetEntries.unshift({
         id: makeId("budgetEntries"),
@@ -1390,7 +1497,8 @@
         address: nextAddress,
       });
     }
-    state.twinLines = [emptyTwinLine(), emptyTwinLine(), emptyTwinLine()];
+    state.twinBankLines = [emptyTwinBankLine()];
+    state.twinBudgetLines = [emptyTwinBudgetLine(), emptyTwinBudgetLine(), emptyTwinBudgetLine()];
     primeForms();
     render();
   }
@@ -1473,16 +1581,17 @@
     const line = event.target.closest(".twin-line");
     if (!line) return;
     const index = safeNumber(line.dataset.index);
-    state.twinLines[index][event.target.name] = event.target.value;
-    if (event.target.name === "budget") {
-      state.twinLines[index].category = "";
-      state.twinLines[index].subcategory = "";
+    const collection = line.dataset.twinType === "bank" ? state.twinBankLines : state.twinBudgetLines;
+    collection[index][event.target.name] = event.target.value;
+    if (line.dataset.twinType === "budget" && event.target.name === "budget") {
+      collection[index].category = "";
+      collection[index].subcategory = "";
       renderTwinLines();
       persist();
       return;
     }
-    if (event.target.name === "category") {
-      state.twinLines[index].subcategory = "";
+    if (line.dataset.twinType === "budget" && event.target.name === "category") {
+      collection[index].subcategory = "";
       renderTwinLines();
       persist();
       return;
@@ -1495,11 +1604,17 @@
   }
 
   function handleTwinLineClick(event) {
-    const button = event.target.closest("[data-remove-twin-line]");
+    const button = event.target.closest("[data-remove-twin-bank-line], [data-remove-twin-budget-line]");
     if (!button) return;
-    state.twinLines.splice(safeNumber(button.dataset.removeTwinLine), 1);
-    if (!state.twinLines.length) state.twinLines.push(emptyTwinLine());
+    if (button.dataset.removeTwinBankLine !== undefined) {
+      state.twinBankLines.splice(safeNumber(button.dataset.removeTwinBankLine), 1);
+      if (!state.twinBankLines.length) state.twinBankLines.push(emptyTwinBankLine());
+    } else {
+      state.twinBudgetLines.splice(safeNumber(button.dataset.removeTwinBudgetLine), 1);
+      if (!state.twinBudgetLines.length) state.twinBudgetLines.push(emptyTwinBudgetLine());
+    }
     renderTwinLines();
+    persist();
   }
 
   function handlePlanningTableInput(event) {
@@ -1646,6 +1761,17 @@
     render();
   }
 
+  function handleMergeDialogChange(event) {
+    if (event.target.id !== "merge-dialog-select" || !state.mergeDialog) return;
+    state.mergeDialog.target = event.target.value;
+  }
+
+  function handleMergeDialogSubmit(event) {
+    if (event.target.id !== "merge-dialog-form") return;
+    event.preventDefault();
+    confirmMergeDialog();
+  }
+
   function handleMoneyInputFocus(event) {
     const input = event.target.closest("[data-money-input]");
     if (!input) return;
@@ -1659,6 +1785,39 @@
   }
 
   function handleGlobalClick(event) {
+    const cancelMergeDialogButton = event.target.closest("[data-cancel-merge-dialog]");
+    if (cancelMergeDialogButton) {
+      closeMergeDialog();
+      return;
+    }
+    if (event.target.hasAttribute("data-close-merge-dialog")) {
+      closeMergeDialog();
+      return;
+    }
+    const toggleBudgetButton = event.target.closest("[data-toggle-budget]");
+    if (toggleBudgetButton) {
+      toggleSetupBudget(toggleBudgetButton.dataset.toggleBudget);
+      return;
+    }
+    const mergeBudgetButton = event.target.closest("[data-merge-budget]");
+    if (mergeBudgetButton) {
+      openMergeBudgetDialog(mergeBudgetButton.dataset.mergeBudget);
+      return;
+    }
+    const mergeCategoryButton = event.target.closest("[data-merge-category]");
+    if (mergeCategoryButton) {
+      openMergeCategoryDialog(mergeCategoryButton.dataset.mergeCategory, mergeCategoryButton.dataset.categoryName);
+      return;
+    }
+    const mergeSubcategoryButton = event.target.closest("[data-merge-subcategory]");
+    if (mergeSubcategoryButton) {
+      openMergeSubcategoryDialog(
+        mergeSubcategoryButton.dataset.mergeSubcategory,
+        mergeSubcategoryButton.dataset.categoryName,
+        mergeSubcategoryButton.dataset.subcategoryName,
+      );
+      return;
+    }
     const startInlineEditButton = event.target.closest("[data-start-inline-edit]");
     if (startInlineEditButton) {
       startInlineEdit(startInlineEditButton.dataset.startInlineEdit, startInlineEditButton.dataset.editId);
@@ -1721,14 +1880,20 @@
   }
 
   function renderTwinLines() {
-    byId("twin-lines").innerHTML = state.twinLines.map((line, index) => `
-      <div class="twin-line" data-index="${index}">
+    byId("twin-bank-lines").innerHTML = state.twinBankLines.map((line, index) => `
+      <div class="twin-line twin-line-bank" data-index="${index}" data-twin-type="bank">
+        <label>Account<input name="accountName" list="accounts-list" value="${escapeAttr(line.accountName)}" /></label>
+        <label>Amount<input name="amount" type="text" inputmode="decimal" data-money-input value="${escapeAttr(formatMoneyInputValue(line.amount))}" /></label>
+        <button class="button button-danger" type="button" data-remove-twin-bank-line="${index}">Remove</button>
+      </div>`).join("");
+    byId("twin-budget-lines").innerHTML = state.twinBudgetLines.map((line, index) => `
+      <div class="twin-line" data-index="${index}" data-twin-type="budget">
         <label>Budget${renderSelectMarkup("budget", getDynamicLookups().budgets, line.budget, "Choose budget")}</label>
         <label>Category${renderSelectMarkup("category", getCategoryOptionsForSelection(line.budget), line.category, "Choose category")}</label>
         <label>Subcategory${renderSelectMarkup("subcategory", getSubcategoryOptionsForSelection(line.budget, line.category), line.subcategory, NO_SUBCATEGORY_LABEL)}</label>
         <label>Amount<input name="amount" type="text" inputmode="decimal" data-money-input value="${escapeAttr(formatMoneyInputValue(line.amount))}" /></label>
         <label>Notes<input name="personalNotes" list="budget-notes-list" value="${escapeAttr(line.personalNotes)}" /></label>
-        <button class="button button-danger" type="button" data-remove-twin-line="${index}">Remove</button>
+        <button class="button button-danger" type="button" data-remove-twin-budget-line="${index}">Remove</button>
       </div>`).join("");
     updateTwinTotal();
   }
@@ -1922,6 +2087,7 @@
 
   function normalizeHierarchySelectionState() {
     const lookups = getDynamicLookups();
+    state.setupCollapsedBudgets = state.setupCollapsedBudgets.filter((budgetName) => lookups.budgets.includes(budgetName));
     if (!["All budgets", ...lookups.budgets].includes(state.filters.budgetBudget)) {
       state.filters.budgetBudget = "All budgets";
     }
@@ -2111,6 +2277,177 @@
     }
   }
 
+  function toggleSetupBudget(budgetName) {
+    if (state.setupCollapsedBudgets.includes(budgetName)) {
+      state.setupCollapsedBudgets = state.setupCollapsedBudgets.filter((item) => item !== budgetName);
+    } else {
+      state.setupCollapsedBudgets = [...state.setupCollapsedBudgets, budgetName];
+    }
+    renderSetup();
+    persist();
+  }
+
+  function openMergeBudgetDialog(sourceBudgetName) {
+    const targets = state.budgetHierarchy.map((budget) => budget.name).filter((budgetName) => budgetName !== sourceBudgetName);
+    if (!targets.length) {
+      window.alert("There are no other budgets available to merge into yet.");
+      return;
+    }
+    state.mergeDialog = {
+      kind: "budget",
+      sourceBudgetName,
+      options: targets,
+      target: targets[0],
+      title: `Merge ${sourceBudgetName}`,
+      description: "Choose the budget that should receive all transactions and categories from this budget.",
+    };
+    renderMergeDialog();
+  }
+
+  function openMergeCategoryDialog(budgetName, sourceCategoryName) {
+    const targets = (getBudgetNode(budgetName)?.categories || [])
+      .map((category) => category.name)
+      .filter((categoryName) => categoryName !== sourceCategoryName);
+    if (!targets.length) {
+      window.alert("There are no other categories available to merge into yet.");
+      return;
+    }
+    state.mergeDialog = {
+      kind: "category",
+      sourceBudgetName: budgetName,
+      sourceCategoryName,
+      options: targets,
+      target: targets[0],
+      title: `Merge ${sourceCategoryName}`,
+      description: `Choose the category inside ${budgetName} that should receive these transactions and subcategories.`,
+    };
+    renderMergeDialog();
+  }
+
+  function openMergeSubcategoryDialog(budgetName, categoryName, sourceSubcategoryName) {
+    const targets = (getCategoryNode(budgetName, categoryName)?.subcategories || []).filter((subcategory) => subcategory !== sourceSubcategoryName);
+    if (!options.length) {
+      window.alert("There are no other subcategories available to merge into yet.");
+      return;
+    }
+    state.mergeDialog = {
+      kind: "subcategory",
+      sourceBudgetName: budgetName,
+      sourceCategoryName: categoryName,
+      sourceSubcategoryName,
+      options: targets,
+      target: targets[0],
+      title: `Merge ${sourceSubcategoryName}`,
+      description: `Choose the subcategory inside ${categoryName} that should receive these transactions.`,
+    };
+    renderMergeDialog();
+  }
+
+  function closeMergeDialog() {
+    if (!state.mergeDialog) return;
+    state.mergeDialog = null;
+    renderMergeDialog();
+  }
+
+  function confirmMergeDialog() {
+    const dialog = state.mergeDialog;
+    if (!dialog?.target) return;
+    if (dialog.kind === "budget") {
+      mergeBudgetIntoBudget(dialog.sourceBudgetName, dialog.target);
+    }
+    if (dialog.kind === "category") {
+      mergeCategoryIntoCategory(dialog.sourceBudgetName, dialog.sourceCategoryName, dialog.target);
+    }
+    if (dialog.kind === "subcategory") {
+      mergeSubcategoryIntoSubcategory(dialog.sourceBudgetName, dialog.sourceCategoryName, dialog.sourceSubcategoryName, dialog.target);
+    }
+    state.mergeDialog = null;
+    render();
+  }
+
+  function mergeBudgetIntoBudget(sourceBudgetName, targetBudgetName) {
+    if (!sourceBudgetName || !targetBudgetName || sourceBudgetName === targetBudgetName) return;
+    const sourceBudget = getBudgetNode(sourceBudgetName);
+    const targetBudget = getBudgetNode(targetBudgetName);
+    if (!sourceBudget || !targetBudget) return;
+
+    for (const category of sourceBudget.categories) {
+      const existing = targetBudget.categories.find((item) => item.name === category.name);
+      if (existing) {
+        for (const subcategory of category.subcategories) {
+          if (!existing.subcategories.includes(subcategory)) existing.subcategories.push(subcategory);
+        }
+      } else {
+        targetBudget.categories.push(clone(category));
+      }
+    }
+
+    state.tables.budgetEntries = state.tables.budgetEntries.map((row) =>
+      row.budget === sourceBudgetName ? { ...row, budget: targetBudgetName } : row,
+    );
+    state.tables.biWeeklyExpenses = state.tables.biWeeklyExpenses.map((row) =>
+      row.budget === sourceBudgetName ? { ...row, budget: targetBudgetName } : row,
+    );
+    state.budgetHierarchy = state.budgetHierarchy.filter((budget) => budget.name !== sourceBudgetName);
+    state.setupCollapsedBudgets = state.setupCollapsedBudgets.filter((budget) => budget !== sourceBudgetName);
+    if (state.filters.budgetBudget === sourceBudgetName) state.filters.budgetBudget = targetBudgetName;
+    if (state.budgetProgressMainGroup === sourceBudgetName) state.budgetProgressMainGroup = targetBudgetName;
+  }
+
+  function mergeCategoryIntoCategory(budgetName, sourceCategoryName, targetCategoryName) {
+    if (!budgetName || !sourceCategoryName || !targetCategoryName || sourceCategoryName === targetCategoryName) return;
+    const budget = getBudgetNode(budgetName);
+    if (!budget) return;
+    const sourceCategory = budget.categories.find((category) => category.name === sourceCategoryName);
+    const targetCategory = budget.categories.find((category) => category.name === targetCategoryName);
+    if (!sourceCategory || !targetCategory) return;
+
+    for (const subcategory of sourceCategory.subcategories) {
+      if (!targetCategory.subcategories.includes(subcategory)) {
+        targetCategory.subcategories.push(subcategory);
+      }
+    }
+
+    state.tables.budgetEntries = state.tables.budgetEntries.map((row) =>
+      row.budget === budgetName && row.category === sourceCategoryName ? { ...row, category: targetCategoryName } : row,
+    );
+    state.tables.biWeeklyExpenses = state.tables.biWeeklyExpenses.map((row) =>
+      row.budget === budgetName && row.category === sourceCategoryName ? { ...row, category: targetCategoryName } : row,
+    );
+    budget.categories = budget.categories.filter((category) => category.name !== sourceCategoryName);
+    if (state.filters.budgetBudget === budgetName && state.filters.budgetCategory === sourceCategoryName) {
+      state.filters.budgetCategory = targetCategoryName;
+    }
+    if (state.budgetProgressCategory === `${budgetName}::${sourceCategoryName}`) {
+      state.budgetProgressCategory = `${budgetName}::${targetCategoryName}`;
+    }
+  }
+
+  function mergeSubcategoryIntoSubcategory(budgetName, categoryName, sourceSubcategoryName, targetSubcategoryName) {
+    if (!budgetName || !categoryName || !sourceSubcategoryName || !targetSubcategoryName || sourceSubcategoryName === targetSubcategoryName) return;
+    const category = getCategoryNode(budgetName, categoryName);
+    if (!category) return;
+
+    state.tables.budgetEntries = state.tables.budgetEntries.map((row) =>
+      row.budget === budgetName && row.category === categoryName && row.subcategory === sourceSubcategoryName
+        ? { ...row, subcategory: targetSubcategoryName }
+        : row,
+    );
+    state.tables.biWeeklyExpenses = state.tables.biWeeklyExpenses.map((row) =>
+      row.budget === budgetName && row.category === categoryName && row.subcategory === sourceSubcategoryName
+        ? { ...row, subcategory: targetSubcategoryName }
+        : row,
+    );
+    category.subcategories = category.subcategories.filter((subcategory) => subcategory !== sourceSubcategoryName);
+    if (
+      state.filters.budgetBudget === budgetName &&
+      state.filters.budgetCategory === categoryName &&
+      state.filters.budgetSubcategory === sourceSubcategoryName
+    ) {
+      state.filters.budgetSubcategory = targetSubcategoryName;
+    }
+  }
+
   function startInlineEdit(tableName, id) {
     const row = state.tables[tableName]?.find((item) => item.id === id);
     if (!row) return;
@@ -2214,7 +2551,16 @@
   function numberCell(value) { return `<span class="number">${escapeHtml(formatNumber(value))}</span>`; }
   function dateCell(value) { return `<span class="date-cell">${escapeHtml(formatDate(value))}</span>`; }
   function mono(value) { return `<span class="mono">${escapeHtml(String(value ?? ""))}</span>`; }
-  function updateTwinTotal() { setText("twin-total", formatMoney(state.twinLines.reduce((total, line) => total + safeNumber(line.amount), 0))); }
+  function updateTwinTotal() {
+    const bankTotal = round2(state.twinBankLines.reduce((total, line) => total + safeMoney(line.amount), 0));
+    const budgetTotal = round2(state.twinBudgetLines.reduce((total, line) => total + safeMoney(line.amount), 0));
+    const difference = round2(bankTotal - budgetTotal);
+    setText("twin-bank-total", formatMoney(bankTotal));
+    setText("twin-budget-total", formatMoney(budgetTotal));
+    const differenceNode = byId("twin-difference");
+    differenceNode.textContent = formatMoney(difference);
+    differenceNode.className = difference === 0 ? "positive" : "negative";
+  }
   function formatMoney(value) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeNumber(value)); }
   function formatMoneyInputValue(value) { return value === "" || value === null || value === undefined ? "" : formatMoney(safeMoney(value)); }
   function formatPercent(value) { return `${(safeNumber(value) * 100).toFixed(2)}%`; }
