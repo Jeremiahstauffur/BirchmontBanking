@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jere & Anna Budget</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Budget App</p>
+          <h1>Jere & Anna Budget</h1>
+          <p class="hero-text">
+            A self-contained budgeting website with planning, banking,
+            pay-period tracking, reconciliation, and self-employment tools.
+          </p>
+          <div class="hero-actions">
+            <button id="export-state" class="button button-primary" type="button">Export Current Data</button>
+            <button id="reset-state" class="button button-secondary" type="button">Reset Starting Data</button>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <div class="meta-row">
+            <span>Starting Data</span>
+            <strong id="meta-workbook">Loading...</strong>
+          </div>
+          <div class="meta-row">
+            <span>Last modified</span>
+            <strong id="meta-modified">Loading...</strong>
+          </div>
+          <div class="meta-row">
+            <span>Extracted</span>
+            <strong id="meta-extracted">Loading...</strong>
+          </div>
+        </div>
+      </header>
+
+      <nav class="view-nav" aria-label="Primary views">
+        <button class="view-tab is-active" data-view="dashboard" type="button">Dashboard</button>
+        <button class="view-tab" data-view="banking" type="button">Banking</button>
+        <button class="view-tab" data-view="twin-entry" type="button">Twin Entry</button>
+        <button class="view-tab" data-view="budgeting" type="button">Budgeting</button>
+        <button class="view-tab" data-view="setup" type="button">Setup</button>
+        <button class="view-tab" data-view="transaction-lookup" type="button">Transaction IDs</button>
+        <button class="view-tab" data-view="planning" type="button">Planning</button>
+        <button class="view-tab" data-view="payperiod" type="button">Pay Period</button>
+        <button class="view-tab" data-view="self-employment" type="button">Self Employment</button>
+      </nav>
+
+      <main class="content-stack">
+        <section class="view-section is-active" data-view-panel="dashboard">
+          <div id="dashboard-summary" class="stats-grid"></div>
+          <div class="panel-grid panel-grid-2">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Account Balances</h2>
+                <p>Live balances from the banking register.</p>
+              </div>
+              <div id="account-summary" class="table-shell"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Budget Buckets</h2>
+                <p>Current category balances from the budget ledger.</p>
+              </div>
+              <div id="category-summary" class="table-shell"></div>
+            </section>
+          </div>
+          <div class="panel-grid">
+            <section class="panel">
+              <div class="panel-header panel-header-inline">
+                <div>
+                  <h2>Bank Overview</h2>
+                  <p>31 rolling checkpoints across your accounts.</p>
+                </div>
+                <form id="bank-overview-form" class="inline-form">
+                  <label>
+                    Start date
+                    <input id="bank-overview-start" type="date" />
+                  </label>
+                  <label>
+                    Step days
+                    <input id="bank-overview-step" type="number" min="1" max="30" />
+                  </label>
+                </form>
+              </div>
+              <div id="bank-overview" class="table-shell table-shell-wide"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header panel-header-inline">
+                <div>
+                  <h2>Budget Overview</h2>
+                  <p>31 rolling checkpoints for unassigned cash and every budget category.</p>
+                </div>
+                <form id="budget-overview-form" class="inline-form">
+                  <label>
+                    Start date
+                    <input id="budget-overview-start" type="date" />
+                  </label>
+                  <label>
+                    Step days
+                    <input id="budget-overview-step" type="number" min="1" max="30" />
+                  </label>
+                </form>
+              </div>
+              <div id="budget-overview" class="table-shell table-shell-wide"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view-section" data-view-panel="banking">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Add Banking Entry</h2>
+              <p>Append a single register row.</p>
+            </div>
+            <form id="banking-form" class="entry-form">
+              <label>
+                Cleared date
+                <input name="clearedDate" type="date" required />
+              </label>
+              <label>
+                Account
+                <input name="accountName" list="accounts-list" required />
+              </label>
+              <label>
+                Check #
+                <input name="checkNumber" />
+              </label>
+              <label>
+                Amount
+                <input name="amount" type="text" inputmode="decimal" data-money-input required />
+              </label>
+              <label>
+                Purchase date
+                <input name="purchaseDate" type="date" required />
+              </label>
+              <button class="button button-primary" type="submit">Add Banking Row</button>
+            </form>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header panel-header-inline">
+              <div>
+                <h2>Register</h2>
+                <p>The banking ledger with live balances and reconciliation tools.</p>
+              </div>
+              <form class="inline-form">
+                <label>
+                  Search
+                  <input id="banking-search" type="search" placeholder="check, amount, account..." />
+                </label>
+                <label>
+                  Account
+                  <select id="banking-account-filter"></select>
+                </label>
+              </form>
+            </div>
+            <div id="reconcile-summary" class="reconcile-summary"></div>
+            <div class="toolbar-row">
+              <label class="checkbox checkbox-hero">
+                <input id="banking-select-all" type="checkbox" />
+                <span>Select all filtered unreconciled rows</span>
+              </label>
+              <button id="reconcile-selected" class="button button-primary" type="button">Reconcile Checked Rows</button>
+            </div>
+            <div id="banking-table" class="table-shell table-shell-wide"></div>
+          </section>
+        </section>
+
+        <section class="view-section" data-view-panel="twin-entry">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Twin Entry Helper</h2>
+              <p>Create one banking row plus multiple budget rows together.</p>
+            </div>
+            <form id="twin-form" class="entry-form">
+              <label>
+                Cleared date
+                <input name="clearedDate" type="date" />
+              </label>
+              <label>
+                Account
+                <input name="accountName" list="accounts-list" />
+              </label>
+              <label>
+                Check #
+                <input name="checkNumber" />
+              </label>
+              <label>
+                Purchase date
+                <input name="purchaseDate" type="date" />
+              </label>
+              <div class="form-action-cluster">
+                <span class="twin-total-label">Split total</span>
+                <strong id="twin-total">$0.00</strong>
+              </div>
+              <button id="add-twin-line" class="button button-secondary" type="button">Add Split</button>
+            </form>
+            <div id="twin-lines" class="twin-lines"></div>
+            <div class="toolbar-row">
+              <button class="button button-primary" form="twin-form" type="submit">Post Twin Entry</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="view-section" data-view-panel="budgeting">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Add Budget Entry</h2>
+              <p>Append one budget ledger row.</p>
+            </div>
+            <form id="budget-form" class="entry-form">
+              <label>
+                Budget
+                <select id="budget-form-budget" name="budget" required></select>
+              </label>
+              <label>
+                Category
+                <select id="budget-form-category" name="category" required></select>
+              </label>
+              <label>
+                Subcategory
+                <select id="budget-form-subcategory" name="subcategory"></select>
+              </label>
+              <label>
+                Amount
+                <input name="amount" type="text" inputmode="decimal" data-money-input required />
+              </label>
+              <label>
+                Date
+                <input name="date" type="date" required />
+              </label>
+              <label>
+                Personal notes
+                <input name="personalNotes" list="budget-notes-list" />
+              </label>
+              <button class="button button-primary" type="submit">Add Budget Row</button>
+            </form>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Transaction IDs</h2>
+              <p>New bank and budget rows always get a fresh transaction ID, and twin entries share one ID.</p>
+            </div>
+            <div class="table-note">Use the Transaction IDs page to search an ID and inspect the linked bank and budget rows.</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header panel-header-inline">
+              <div>
+                <h2>Budget Ledger</h2>
+                <p>Running balances by budget, category, and subcategory.</p>
+              </div>
+              <div id="budget-subtotal" class="summary-chip"></div>
+              <form class="inline-form">
+                <label>
+                  Search
+                  <input id="budget-search" type="search" placeholder="budget, category, subcategory, notes..." />
+                </label>
+                <label>
+                  Budget
+                  <select id="budget-budget-filter"></select>
+                </label>
+                <label>
+                  Category
+                  <select id="budget-category-filter"></select>
+                </label>
+                <label>
+                  Subcategory
+                  <select id="budget-subcategory-filter"></select>
+                </label>
+              </form>
+            </div>
+            <div id="budgeting-table" class="table-shell table-shell-wide"></div>
+          </section>
+        </section>
+
+        <section class="view-section" data-view-panel="setup">
+          <section class="panel">
+            <div class="panel-header panel-header-inline">
+              <div>
+                <h2>Budget Setup</h2>
+                <p>Drag categories between budgets, drag subcategories between categories, and add new items directly in the app.</p>
+              </div>
+              <form id="setup-budget-form" class="inline-form">
+                <label>
+                  New budget
+                  <input id="setup-budget-name" name="name" placeholder="Add a new main budget" required />
+                </label>
+                <button class="button button-primary" type="submit">Add Budget</button>
+              </form>
+            </div>
+            <div id="setup-summary" class="reconcile-summary"></div>
+            <div id="setup-board" class="setup-board"></div>
+          </section>
+        </section>
+
+        <section class="view-section" data-view-panel="transaction-lookup">
+          <section class="panel">
+            <div class="panel-header panel-header-inline">
+              <div>
+                <h2>Transaction ID Lookup</h2>
+                <p>Search a transaction ID and inspect the linked bank and budget rows.</p>
+              </div>
+              <form class="inline-form">
+                <label>
+                  Search ID
+                  <input id="transaction-id-search" type="search" placeholder="TXN-..." />
+                </label>
+              </form>
+            </div>
+            <div id="transaction-id-summary" class="table-shell table-shell-wide"></div>
+          </section>
+          <div class="panel-grid panel-grid-2">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Bank Matches</h2>
+                <p>Register rows carrying the selected transaction ID.</p>
+              </div>
+              <div id="transaction-id-bank-results" class="table-shell table-shell-wide"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Budget Matches</h2>
+                <p>Budget rows carrying the selected transaction ID.</p>
+              </div>
+              <div id="transaction-id-budget-results" class="table-shell table-shell-wide"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view-section" data-view-panel="planning">
+          <div class="panel-grid panel-grid-2">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Paycheck Frequency</h2>
+                <p>The planning math updates when you switch the cycle.</p>
+              </div>
+              <form id="planning-frequency-form" class="entry-form">
+                <label>
+                  Frequency
+                  <select id="planning-frequency"></select>
+                </label>
+              </form>
+              <div id="planning-summary" class="stats-grid compact"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Car Cost Calculator</h2>
+                <p>Edit rows directly. Per-mile and per-paycheck values are recalculated.</p>
+              </div>
+              <div class="toolbar-row">
+                <button id="add-car-cost-row" class="button button-secondary" type="button">Add Car Cost Row</button>
+              </div>
+              <div id="car-cost-table" class="table-shell"></div>
+            </section>
+          </div>
+          <div class="panel-grid panel-grid-2">
+            <section class="panel">
+              <div class="panel-header panel-header-inline">
+                <div>
+                  <h2>Biweekly Expenses</h2>
+                  <p>Edit planning rows and submit them as budget transactions.</p>
+                </div>
+                <form id="planning-post-form" class="inline-form">
+                  <label>
+                    Post date
+                    <input id="planning-post-date" type="date" required />
+                  </label>
+                  <button class="button button-primary" type="submit">Post All Budget Rows</button>
+                </form>
+              </div>
+              <div class="toolbar-row">
+                <button id="add-biweekly-row" class="button button-secondary" type="button">Add Biweekly Row</button>
+              </div>
+              <div id="planning-table" class="table-shell table-shell-wide"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Current Budget Progress</h2>
+                <p>Main budget progress for this payperiod, showing how much has been spent out of what came in.</p>
+              </div>
+              <div id="budget-progress-table" class="table-shell table-shell-wide"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view-section" data-view-panel="payperiod">
+          <section class="panel">
+            <div class="panel-header panel-header-inline">
+                <div>
+                  <h2>Payperiod Printoff</h2>
+                  <p>Your pay-period income and expense rollup.</p>
+                </div>
+              <form id="payperiod-form" class="inline-form">
+                <label>
+                  Start date
+                  <input id="payperiod-start" type="date" />
+                </label>
+                <label>
+                  Cycle days
+                  <input id="payperiod-days" type="number" min="1" max="60" />
+                </label>
+              </form>
+            </div>
+            <div id="payperiod-summary" class="stats-grid compact"></div>
+            <div class="panel-grid panel-grid-2">
+              <div class="subpanel">
+                <h3>Income</h3>
+                <div id="payperiod-income" class="table-shell"></div>
+              </div>
+              <div class="subpanel">
+                <h3>Expenses</h3>
+                <div class="expense-columns">
+                  <div id="payperiod-expenses-left" class="table-shell"></div>
+                  <div id="payperiod-expenses-right" class="table-shell"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view-section" data-view-panel="self-employment">
+          <div class="subview-nav" aria-label="Self employment sections">
+            <button class="subview-tab is-active" data-se-view="income" type="button">Income</button>
+            <button class="subview-tab" data-se-view="expenses" type="button">Expenses</button>
+            <button class="subview-tab" data-se-view="mileage" type="button">Mileage</button>
+          </div>
+          <section class="panel se-subview is-active" data-se-panel="income">
+            <section>
+              <div class="panel-header">
+                <h2>Income</h2>
+                <p>Sales tax, self-employment tax, tithe, and net left.</p>
+              </div>
+              <form id="se-income-form" class="entry-form">
+                <label>
+                  Date
+                  <input name="date" type="date" required />
+                </label>
+                <label>
+                  Amount
+                  <input name="amount" type="text" inputmode="decimal" data-money-input required />
+                </label>
+                <label>
+                  Label
+                  <input name="label" required />
+                </label>
+                <label>
+                  Notes
+                  <input name="notes" />
+                </label>
+                <label class="checkbox">
+                  <input name="salesTaxable" type="checkbox" />
+                  Sales taxable
+                </label>
+                <label class="checkbox">
+                  <input name="selfEmploymentTaxEnabled" type="checkbox" />
+                  Self-employment tax enabled
+                </label>
+                <button class="button button-primary" type="submit">Add Income Row</button>
+              </form>
+              <div id="se-income-table" class="table-shell table-shell-wide"></div>
+            </section>
+          </section>
+          <section class="panel se-subview" data-se-panel="expenses">
+            <section>
+              <div class="panel-header">
+                <h2>Expenses</h2>
+                <p>Deduction rate times amount, plus yearly totals by category.</p>
+              </div>
+              <form id="se-expense-form" class="entry-form">
+                <label>
+                  Date
+                  <input name="date" type="date" required />
+                </label>
+                <label>
+                  Amount
+                  <input name="amount" type="text" inputmode="decimal" data-money-input required />
+                </label>
+                <label>
+                  Tax category
+                  <input name="taxCategory" required />
+                </label>
+                <label>
+                  Deductible rate
+                  <input name="taxDeductibleRate" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Notes
+                  <input name="notes" />
+                </label>
+                <button class="button button-primary" type="submit">Add Expense Row</button>
+              </form>
+              <div id="se-expenses-table" class="table-shell table-shell-wide"></div>
+            </section>
+          </section>
+          <section class="panel se-subview" data-se-panel="mileage">
+            <section>
+              <div class="panel-header">
+                <h2>Mileage</h2>
+                <p>Miles, yearly totals per purpose and vehicle, and the mileage deduction.</p>
+              </div>
+              <form id="mileage-form" class="entry-form">
+                <label>
+                  Date
+                  <input name="date" type="date" required />
+                </label>
+                <label>
+                  Miles
+                  <input name="miles" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Vehicle
+                  <input name="vehicle" required />
+                </label>
+                <label>
+                  Purpose
+                  <input name="purpose" required />
+                </label>
+                <label class="field-wide">
+                  Notes
+                  <input name="notes" />
+                </label>
+                <button class="button button-primary" type="submit">Add Mileage Row</button>
+              </form>
+              <div id="mileage-table" class="table-shell table-shell-wide"></div>
+            </section>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <datalist id="accounts-list"></datalist>
+    <datalist id="categories-list"></datalist>
+    <datalist id="subcategories-list"></datalist>
+    <datalist id="budget-notes-list"></datalist>
+
+    <script src="./data/workbook-seed.js"></script>
+    <script src="./webapp.js"></script>
+  </body>
+</html>
